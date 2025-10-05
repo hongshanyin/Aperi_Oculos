@@ -18,25 +18,29 @@ public class AperiOculos {
     public static final String MOD_ID = "aperioculos";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public AperiOculos() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+    public AperiOculos(FMLJavaModLoadingContext context) {
+        IEventBus modEventBus = context.getModEventBus();
 
-        // 1. 注册自定义属性
+        // 1. 注册自定义属性（仅声明，实际使用Capability）
         ModAttributes.register(modEventBus);
 
         // 2. 注册配置文件
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC, "aperioculos-common.toml");
+        ModLoadingContext.get().registerConfig(
+            ModConfig.Type.COMMON,
+            Config.SPEC,
+            "aperioculos-common.toml"
+        );
 
         // 3. 将核心系统注册到Forge事件总线
-        // VisionSystem 监听 ServerTickEvent
-        // HearingSystem 监听 EntityJoinLevelEvent
         MinecraftForge.EVENT_BUS.register(new VisionSystem());
         MinecraftForge.EVENT_BUS.register(new HearingSystem());
 
-        // 4. 将ModAttributes的事件处理器注册到MOD事件总线
-        // 这是为了让 onEntityAttributeCreation 事件能够被监听到
-        modEventBus.register(ModAttributes.class);
+        // 注意：CapabilityHandler已通过@Mod.EventBusSubscriber自动注册
+        // 无需手动注册
 
         LOGGER.info("Aperi Oculos: The eyes and ears of the world are now open.");
+        LOGGER.info("  - Vision System: Active (with entity occlusion support)");
+        LOGGER.info("  - Hearing System: Active (GameEvent-based vibration perception)");
+        LOGGER.info("  - Capability System: Active (hearing multiplier storage)");
     }
 }

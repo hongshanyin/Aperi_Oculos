@@ -1,69 +1,108 @@
 package io.github.Sorcery_Dynasties.aperioculos.systems;
 
 import io.github.Sorcery_Dynasties.aperioculos.api.AperiOculosAPI;
-import io.github.Sorcery_Dynasties.aperioculos.api.event.SoundHeardEvent;
-import io.github.Sorcery_Dynasties.aperioculos.attributes.ModAttributes;
-import net.minecraft.sounds.SoundEvent;
+import io.github.Sorcery_Dynasties.aperioculos.api.event.VibrationPerceivedEvent;
+import io.github.Sorcery_Dynasties.aperioculos.capability.HearingCapabilityProvider;
+import io.github.Sorcery_Dynasties.aperioculos.config.Config;
+// 新增 import
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.level.PlaySoundEvent; // [修正] 正确的事件导入
+import net.minecraftforge.event.VanillaGameEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 public class HearingSystem {
 
     @SubscribeEvent
-    public void onPlaySound(PlaySoundEvent event) { // [修正] 正确的事件类
-        Level level = event.getLevel();
-        if (level.isClientSide()) return;
+    public void onGameEvent(VanillaGameEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
+            return;
+        }
 
-        SoundEvent sound = event.getSound();
-        if (sound == null) return;
+        // event.getVanillaEvent() 正确返回 GameEvent
+        GameEvent gameEvent = event.getVanillaEvent();
+        Vec3 sourcePos = event.getEventPosition();
+        @Nullable Entity sourceEntity = event.getCause();
 
-        Vec3 sourcePos = event.getPos();
-        float initialVolume = event.getVolume();
-        // [修正] 服务器端无法获取衰减距离，使用基于音量的标准估算
-        float maxRange = initialVolume * 16.0f;
-        if (maxRange <= 0) return;
+        if (!isMonitoredEvent(gameEvent)) {
+            return;
+        }
 
-        // [修正] 正确的AABB构造
-        AABB scanBounds = new AABB(sourcePos, sourcePos).inflate(maxRange);
+        // 使用正确的 getter 方法
+        int baseRadius = gameEvent.getNotificationRadius();
+        if (baseRadius <= 0) {
+            return;
+        }
 
-        for (LivingEntity listener : level.getEntitiesOfClass(LivingEntity.class, scanBounds)) {
-            if (AperiOculosAPI.isDeaf(listener) || listener instanceof Player) continue;
+        AABB scanBounds = new AABB(sourcePos, sourcePos).inflate(baseRadius * 3.0);
 
-            AttributeInstance thresholdAttr = listener.getAttribute(ModAttributes.HEARING_THRESHOLD.get());
-            if (thresholdAttr == null) continue;
-            double hearingThreshold = thresholdAttr.getValue();
+        for (Mob listener : serverLevel.getEntitiesOfClass(Mob.class, scanBounds)) {
+            if (AperiOculosAPI.isDeaf(listener)) continue;
+            if (listener.equals(sourceEntity)) continue;
 
-            float perceivedVolume = getPerceivedVolumeAt(listener, sourcePos, maxRange, initialVolume);
+            double hearingMultiplier = getHearingMultiplier(listener);
+            double effectiveRange = baseRadius * hearingMultiplier;
 
-            if (perceivedVolume >= hearingThreshold) {
-                MinecraftForge.EVENT_BUS.post(new SoundHeardEvent(listener, sourcePos, sound, perceivedVolume, hearingThreshold));
+            double distance = listener.position().distanceTo(sourcePos);
+            if (distance > effectiveRange) {
+                continue;
             }
+
+            if (isVibrationBlocked(listener, sourcePos)) {
+                continue;
+            }
+
+            // 现在传入 gameEvent 对象，类型匹配正确
+            MinecraftForge.EVENT_BUS.post(new VibrationPerceivedEvent(
+                    listener, sourcePos, gameEvent, effectiveRange, distance, sourceEntity
+            ));
         }
     }
 
-    private float getPerceivedVolumeAt(LivingEntity listener, Vec3 sourcePos, float maxRange, float initialVolume) {
-        double distance = listener.position().distanceTo(sourcePos);
+    private double getHearingMultiplier(LivingEntity entity) {
+        return entity.getCapability(HearingCapabilityProvider.HEARING_CAPABILITY)
+                .map(cap -> cap.getHearingMultiplier())
+                .orElse(Config.DEFAULT_HEARING_MULTIPLIER.get());
+    }
 
-        if (distance > maxRange) {
-            return 0.0f;
+    private boolean isVibrationBlocked(LivingEntity listener, Vec3 sourcePos) {
+        Vec3 listenerPos = listener.position().add(0, listener.getEyeHeight() * 0.5, 0);
+        ClipContext context = new ClipContext(
+                listenerPos, sourcePos,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                listener
+        );
+        return listener.level().clip(context).getType() != HitResult.Type.MISS;
+    }
+
+    /**
+     * 检查GameEvent是否在监听列表中 (已修正)
+     */
+    private boolean isMonitoredEvent(GameEvent event) {
+        List<? extends String> monitoredEvents = Config.MONITORED_GAME_EVENTS.get();
+        if (monitoredEvents.isEmpty()) {
+            return true;
         }
 
-        float volumeAfterDistance = initialVolume * (1.0f - (float) (distance / maxRange));
-
-        ClipContext context = new ClipContext(listener.getEyePosition(), sourcePos, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, listener);
-        if (listener.level().clip(context).getType() != HitResult.Type.MISS) {
-            return volumeAfterDistance * 0.1f; // Muffled sound penalty
+        // 关键修正：通过查询注册表来获取 GameEvent 的 ResourceLocation
+        ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(event);
+        if (eventId == null) {
+            return false; // 如果事件未注册，则不监听
         }
 
-        return volumeAfterDistance;
+        return monitoredEvents.contains(eventId.toString());
     }
 }
