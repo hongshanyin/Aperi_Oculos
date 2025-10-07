@@ -4,7 +4,7 @@ import io.github.Sorcery_Dynasties.aperioculos.api.AperiOculosAPI;
 import io.github.Sorcery_Dynasties.aperioculos.api.event.VibrationPerceivedEvent;
 import io.github.Sorcery_Dynasties.aperioculos.capability.HearingCapabilityProvider;
 import io.github.Sorcery_Dynasties.aperioculos.config.Config;
-// 新增 import
+import io.github.Sorcery_Dynasties.aperioculos.util.PerceptionLogger;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -23,7 +23,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-public class HearingSystem {
+/**
+ * 振动感知系统
+ * 监听GameEvent（如投掷物落地、箭矢击中等），使怪物被吸引到声音源位置
+ */
+public class VibrationSystem {
 
     @SubscribeEvent
     public void onGameEvent(VanillaGameEvent event) {
@@ -31,78 +35,123 @@ public class HearingSystem {
             return;
         }
 
-        // event.getVanillaEvent() 正确返回 GameEvent
         GameEvent gameEvent = event.getVanillaEvent();
         Vec3 sourcePos = event.getEventPosition();
         @Nullable Entity sourceEntity = event.getCause();
 
+        // 检查是否在监听列表中
         if (!isMonitoredEvent(gameEvent)) {
             return;
         }
 
-        // 使用正确的 getter 方法
         int baseRadius = gameEvent.getNotificationRadius();
         if (baseRadius <= 0) {
             return;
         }
 
-        AABB scanBounds = new AABB(sourcePos, sourcePos).inflate(baseRadius * 3.0);
+        // 使用配置的自定义吸引范围（如果设置了）
+        double configuredRange = getConfiguredAttractionRange(gameEvent);
+        double finalRange = configuredRange > 0 ? configuredRange : baseRadius;
+
+        // 扩大扫描范围（根据最大可能的听力乘数）
+        double maxMultiplier = Config.MAX_HEARING_MULTIPLIER.get();
+        AABB scanBounds = new AABB(sourcePos, sourcePos).inflate(finalRange * maxMultiplier);
 
         for (Mob listener : serverLevel.getEntitiesOfClass(Mob.class, scanBounds)) {
-            if (AperiOculosAPI.isDeaf(listener)) continue;
-            if (listener.equals(sourceEntity)) continue;
+            // 失聪检查
+            if (AperiOculosAPI.isDeaf(listener)) {
+                PerceptionLogger.logVibrationBlocked(listener, gameEvent, "Entity is deaf");
+                continue;
+            }
 
+            // 排除事件源自身
+            if (listener.equals(sourceEntity)) {
+                continue;
+            }
+
+            // 获取听力乘数
             double hearingMultiplier = getHearingMultiplier(listener);
-            double effectiveRange = baseRadius * hearingMultiplier;
+            double effectiveRange = finalRange * hearingMultiplier;
 
+            // 距离检查
             double distance = listener.position().distanceTo(sourcePos);
             if (distance > effectiveRange) {
+                PerceptionLogger.logVibrationBlocked(listener, gameEvent,
+                        String.format("Too far (%.2fm > %.2fm)", distance, effectiveRange));
                 continue;
             }
 
-            if (isVibrationBlocked(listener, sourcePos)) {
+            // 遮挡检查（投掷物声音可以穿透一定厚度的方块）
+            if (Config.ENABLE_VIBRATION_OCCLUSION.get() && isVibrationBlocked(listener, sourcePos)) {
+                PerceptionLogger.logVibrationBlocked(listener, gameEvent, "Blocked by terrain");
                 continue;
             }
 
-            // 现在传入 gameEvent 对象，类型匹配正确
+            // 记录成功感知
+            PerceptionLogger.logVibrationPerceived(listener, gameEvent, sourcePos, distance, effectiveRange);
+
+            // 广播事件，包含持续时间信息
+            int attractionDuration = Config.VIBRATION_ATTRACTION_DURATION_TICKS.get();
             MinecraftForge.EVENT_BUS.post(new VibrationPerceivedEvent(
-                    listener, sourcePos, gameEvent, effectiveRange, distance, sourceEntity
+                    listener, sourcePos, gameEvent, effectiveRange, distance, sourceEntity, attractionDuration
             ));
         }
     }
 
+    /**
+     * 获取实体的听力乘数
+     */
     private double getHearingMultiplier(LivingEntity entity) {
         return entity.getCapability(HearingCapabilityProvider.HEARING_CAPABILITY)
                 .map(cap -> cap.getHearingMultiplier())
                 .orElse(Config.DEFAULT_HEARING_MULTIPLIER.get());
     }
 
+    /**
+     * 检查振动是否被遮挡
+     */
     private boolean isVibrationBlocked(LivingEntity listener, Vec3 sourcePos) {
         Vec3 listenerPos = listener.position().add(0, listener.getEyeHeight() * 0.5, 0);
+
         ClipContext context = new ClipContext(
                 listenerPos, sourcePos,
                 ClipContext.Block.COLLIDER,
                 ClipContext.Fluid.NONE,
                 listener
         );
+
         return listener.level().clip(context).getType() != HitResult.Type.MISS;
     }
 
     /**
-     * 检查GameEvent是否在监听列表中 (已修正)
+     * 检查GameEvent是否在监听列表中
      */
     private boolean isMonitoredEvent(GameEvent event) {
         List<? extends String> monitoredEvents = Config.MONITORED_GAME_EVENTS.get();
+
+        // 空列表表示监听所有事件
         if (monitoredEvents.isEmpty()) {
             return true;
         }
 
-        // 关键修正：通过查询注册表来获取 GameEvent 的 ResourceLocation
         ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(event);
         if (eventId == null) {
-            return false; // 如果事件未注册，则不监听
+            return false;
         }
 
         return monitoredEvents.contains(eventId.toString());
+    }
+
+    /**
+     * 获取特定事件的配置吸引范围
+     */
+    private double getConfiguredAttractionRange(GameEvent event) {
+        ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(event);
+        if (eventId == null) {
+            return 0;
+        }
+
+        return Config.getCustomAttractionRanges()
+                .getOrDefault(eventId.toString(), 0.0);
     }
 }

@@ -1,15 +1,16 @@
 package io.github.Sorcery_Dynasties.aperioculos;
 
 import com.mojang.logging.LogUtils;
-import io.github.Sorcery_Dynasties.aperioculos.attributes.ModAttributes;
 import io.github.Sorcery_Dynasties.aperioculos.config.Config;
-import io.github.Sorcery_Dynasties.aperioculos.systems.HearingSystem;
+import io.github.Sorcery_Dynasties.aperioculos.systems.VibrationSystem;
 import io.github.Sorcery_Dynasties.aperioculos.systems.VisionSystem;
+import io.github.Sorcery_Dynasties.aperioculos.util.PerceptionLogger;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
@@ -21,26 +22,40 @@ public class AperiOculos {
     public AperiOculos(FMLJavaModLoadingContext context) {
         IEventBus modEventBus = context.getModEventBus();
 
-        // 1. 注册自定义属性（仅声明，实际使用Capability）
-        ModAttributes.register(modEventBus);
-
-        // 2. 注册配置文件
+        // 注册配置文件
         ModLoadingContext.get().registerConfig(
-            ModConfig.Type.COMMON,
-            Config.SPEC,
-            "aperioculos-common.toml"
+                ModConfig.Type.COMMON,
+                Config.SPEC,
+                "aperioculos-common.toml"
         );
 
-        // 3. 将核心系统注册到Forge事件总线
-        MinecraftForge.EVENT_BUS.register(new VisionSystem());
-        MinecraftForge.EVENT_BUS.register(new HearingSystem());
+        // 监听配置加载完成事件
+        modEventBus.addListener(this::onCommonSetup);
 
-        // 注意：CapabilityHandler已通过@Mod.EventBusSubscriber自动注册
-        // 无需手动注册
+        // 注册核心系统到Forge事件总线
+        MinecraftForge.EVENT_BUS.register(new VisionSystem());
+        MinecraftForge.EVENT_BUS.register(new VibrationSystem());
 
         LOGGER.info("Aperi Oculos: The eyes and ears of the world are now open.");
-        LOGGER.info("  - Vision System: Active (with entity occlusion support)");
-        LOGGER.info("  - Hearing System: Active (GameEvent-based vibration perception)");
-        LOGGER.info("  - Capability System: Active (hearing multiplier storage)");
+    }
+
+    private void onCommonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(() -> {
+            // 记录配置加载信息
+            PerceptionLogger.logConfigLoaded();
+
+            // 记录系统初始化
+            PerceptionLogger.logSystemInitialized("Vision System");
+            PerceptionLogger.logSystemInitialized("Vibration System");
+            PerceptionLogger.logSystemInitialized("Capability System");
+
+            LOGGER.info("  - Vision System: Active (with entity occlusion support)");
+            LOGGER.info("  - Vibration System: Active (GameEvent-based)");
+            LOGGER.info("  - Capability System: Active (hearing multiplier storage)");
+
+            if (Config.ENABLE_DEBUG_LOGGING.get()) {
+                LOGGER.warn("⚠️ Debug logging is ENABLED - this may impact performance!");
+            }
+        });
     }
 }
