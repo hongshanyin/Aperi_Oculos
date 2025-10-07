@@ -5,6 +5,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.effect.MobEffects;
 
 public class LineOfSightChecker {
 
@@ -35,6 +36,11 @@ public class LineOfSightChecker {
     }
 
     private static boolean performLineOfSightCheck(LivingEntity observer, LivingEntity target) {
+        // 新增：发光效果检查，无视障碍物
+        if (target.hasEffect(MobEffects.GLOWING)) {
+            return true;
+        }
+
         Vec3 observerEye = observer.getEyePosition();
         Vec3 targetEye = target.getEyePosition();
 

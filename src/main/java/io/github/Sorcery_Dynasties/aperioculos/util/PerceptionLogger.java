@@ -9,6 +9,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -29,14 +30,18 @@ public class PerceptionLogger {
      * 记录目标被发现事件
      */
     public static void logTargetSpotted(LivingEntity observer, LivingEntity target,
-                                        double distance, double fovAngle) {
-        if (!shouldLogVisionEvent()) return;
+                                        double distance, double fovAngle, double visionRange) {
+        if (!shouldLogVisionEvent()) return; // 关键的性能检查点
 
-        LOGGER.info("[VISION] {} spotted {} at distance {:.2f}m (FoV angle: {:.1f}°)",
+        // --- 昂贵的操作现在被安全地包裹在检查之后 ---
+        LOGGER.info("[VISION] {} at {} spotted {} at {} - Distance: {}m / Range: {}m (FoV: {}°)",
                 getEntityName(observer),
+                formatPosition(observer),
                 getEntityName(target),
-                distance,
-                fovAngle
+                formatPosition(target),
+                String.format("%.2f", distance),       // 格式化移入
+                String.format("%.1f", visionRange),      // 格式化移入
+                String.format("%.1f", fovAngle)        // 格式化移入
         );
     }
 
@@ -58,32 +63,61 @@ public class PerceptionLogger {
     /**
      * 记录振动被感知事件
      */
+
     public static void logVibrationPerceived(LivingEntity listener, GameEvent gameEvent,
-                                             Vec3 sourcePos, double distance, double effectiveRange) {
+                                             Vec3 sourcePos, double distance, double effectiveRange,
+                                             @Nullable Entity sourceEntity) { // 新增参数
         if (!shouldLogVibrationEvent()) return;
 
         ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(gameEvent);
+        String sourceName = sourceEntity != null ? getEntityName(sourceEntity) : "world";
 
-        LOGGER.info("[VIBRATION] {} perceived {} at ({:.1f}, {:.1f}, {:.1f}) - Distance: {:.2f}m / Range: {:.2f}m",
+        LOGGER.info("[VIBRATION] {} at {} perceived {} from {} at {} - Distance: {}m / Range: {}m",
                 getEntityName(listener),
+                formatPosition(listener), // 新增
                 eventId != null ? eventId.toString() : "unknown_event",
-                sourcePos.x, sourcePos.y, sourcePos.z,
-                distance,
-                effectiveRange
+                sourceName, // 新增
+                formatPosition(sourcePos), // 格式化修复
+                String.format("%.2f", distance), // 格式化修复
+                String.format("%.2f", effectiveRange) // 格式化修复
         );
     }
-
     /**
      * 记录振动检查失败原因
      */
-    public static void logVibrationBlocked(LivingEntity listener, GameEvent gameEvent, String reason) {
+
+    // 保留旧方法，用于记录其他原因的失败，例如“失聪”
+    public static void logVibrationBlocked(LivingEntity listener, GameEvent gameEvent, String simpleReason, Vec3 sourcePos) {
         if (!shouldLogVibrationEvent()) return;
 
         ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(gameEvent);
 
-        LOGGER.debug("[VIBRATION] {} blocked from hearing {} - Reason: {}",
+        LOGGER.debug("[VIBRATION] {} at {} blocked from hearing {} at {} - Reason: {}",
                 getEntityName(listener),
+                formatPosition(listener),
                 eventId != null ? eventId.toString() : "unknown_event",
+                formatPosition(sourcePos),
+                simpleReason
+        );
+    }
+// 新增一个重载方法，专门处理因距离和遮挡失败的日志
+    public static void logVibrationBlocked(LivingEntity listener, GameEvent gameEvent, Vec3 sourcePos,
+        double distance, double effectiveRange, boolean isOccluded) {
+        if (!shouldLogVibrationEvent()) return; // 关键的性能检查点
+
+        // --- 昂贵的操作现在被安全地包裹在检查之后 ---
+        String reason = String.format("Too far (%.2fm > %.2fm)", distance, effectiveRange);
+        if (isOccluded) {
+            reason += " with 50% occlusion penalty";
+        }
+
+        ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(gameEvent);
+
+        LOGGER.debug("[VIBRATION] {} at {} blocked from hearing {} at {} - Reason: {}",
+                getEntityName(listener),
+                formatPosition(listener),
+                eventId != null ? eventId.toString() : "unknown_event",
+                formatPosition(sourcePos),
                 reason
         );
     }
@@ -311,5 +345,20 @@ public class PerceptionLogger {
         }
 
         return name + "@" + Integer.toHexString(entity.getId());
+    }
+    /**
+     * 格式化实体坐标
+     */
+    private static String formatPosition(Entity entity) {
+        if (entity == null) return "(null)";
+        return formatPosition(entity.position());
+    }
+
+    /**
+     * 格式化Vec3坐标
+     */
+    private static String formatPosition(Vec3 pos) {
+        if (pos == null) return "(null)";
+        return String.format("(%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z);
     }
 }

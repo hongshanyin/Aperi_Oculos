@@ -6,6 +6,7 @@ import io.github.Sorcery_Dynasties.aperioculos.config.Config;
 import io.github.Sorcery_Dynasties.aperioculos.util.PerceptionLogger;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.MinecraftForge;
@@ -52,10 +53,14 @@ public class VisionSystem {
                 if (AperiOculosAPI.canSee(mob, player)) {
                     successfulSpottings++;
 
-                    // 记录发现事件
+                    // 准备日志所需的所有原始数据
                     double distance = mob.distanceTo(player);
                     double fovAngle = calculateFovAngle(mob, player);
-                    PerceptionLogger.logTargetSpotted(mob, player, distance, fovAngle);
+                    double visionRange = mob.getAttributeValue(Attributes.FOLLOW_RANGE);
+
+                    // LOGGING
+
+                    PerceptionLogger.logTargetSpotted(mob, player, distance, fovAngle, visionRange);
 
                     MinecraftForge.EVENT_BUS.post(new TargetSpottedEvent(mob, player));
                 }
@@ -64,6 +69,9 @@ public class VisionSystem {
 
         // 记录性能指标
         long scanDuration = System.currentTimeMillis() - scanStartTime;
+
+        // LOGGING
+        // 调用日志方法，传递原始数据，无额外性能开销
         PerceptionLogger.logVisionScanPerformance(
                 totalPlayers,
                 totalMobs,

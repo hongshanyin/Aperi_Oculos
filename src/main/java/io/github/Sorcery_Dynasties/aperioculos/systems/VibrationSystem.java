@@ -60,7 +60,7 @@ public class VibrationSystem {
         for (Mob listener : serverLevel.getEntitiesOfClass(Mob.class, scanBounds)) {
             // 失聪检查
             if (AperiOculosAPI.isDeaf(listener)) {
-                PerceptionLogger.logVibrationBlocked(listener, gameEvent, "Entity is deaf");
+                PerceptionLogger.logVibrationBlocked(listener, gameEvent, "Entity is deaf", sourcePos);
                 continue;
             }
 
@@ -75,20 +75,32 @@ public class VibrationSystem {
 
             // 距离检查
             double distance = listener.position().distanceTo(sourcePos);
+            boolean isOccluded = false;
+
             if (distance > effectiveRange) {
-                PerceptionLogger.logVibrationBlocked(listener, gameEvent,
-                        String.format("Too far (%.2fm > %.2fm)", distance, effectiveRange));
+
+                // 这个日志现在只记录最常见的“距离太远”情况
+                // LOGGING
+
+                PerceptionLogger.logVibrationBlocked(listener, gameEvent, sourcePos, distance, effectiveRange, false);
                 continue;
             }
 
-            // 遮挡检查（投掷物声音可以穿透一定厚度的方块）
+            // 遮挡检查：如果开启，则将有效范围减半
             if (Config.ENABLE_VIBRATION_OCCLUSION.get() && isVibrationBlocked(listener, sourcePos)) {
-                PerceptionLogger.logVibrationBlocked(listener, gameEvent, "Blocked by terrain");
-                continue;
+                double occludedRange = effectiveRange * 0.5;
+                // 应用惩罚后再次检查距离
+                if (distance > occludedRange) {
+                    // 这个日志专门记录因遮挡惩罚而失败的情况
+                    // // LOGGING
+                    PerceptionLogger.logVibrationBlocked(listener, gameEvent, sourcePos, distance, occludedRange, true);
+                    continue;
+                }
             }
 
-            // 记录成功感知
-            PerceptionLogger.logVibrationPerceived(listener, gameEvent, sourcePos, distance, effectiveRange);
+            // 如果通过了所有检查，则判定为成功感知
+            // // LOGGING
+            PerceptionLogger.logVibrationPerceived(listener, gameEvent, sourcePos, distance, effectiveRange, sourceEntity);
 
             // 广播事件，包含持续时间信息
             int attractionDuration = Config.VIBRATION_ATTRACTION_DURATION_TICKS.get();
