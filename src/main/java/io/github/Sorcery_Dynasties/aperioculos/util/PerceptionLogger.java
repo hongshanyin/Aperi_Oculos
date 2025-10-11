@@ -28,20 +28,25 @@ public class PerceptionLogger {
 
     /**
      * 记录目标被发现事件
+     * @param observer 观察者实体（原始数据）
+     * @param target 目标实体（原始数据）
+     * @param distance 原始距离值
+     * @param fovAngle 原始角度值
+     * @param visionRange 原始视野范围值
      */
     public static void logTargetSpotted(LivingEntity observer, LivingEntity target,
                                         double distance, double fovAngle, double visionRange) {
         if (!shouldLogVisionEvent()) return; // 关键的性能检查点
 
-        // --- 昂贵的操作现在被安全地包裹在检查之后 ---
-        LOGGER.info("[VISION] {} at {} spotted {} at {} - Distance: {}m / Range: {}m (FoV: {}°)",
+        // --- 所有昂贵的操作（包括格式化）现在被安全地包裹在检查之后 ---
+        LOGGER.info("[VISION] {} at {} spotted {} at {} - Distance: {:.2f}m / Range: {:.1f}m (FoV: {:.1f}°)",
                 getEntityName(observer),
                 formatPosition(observer),
                 getEntityName(target),
                 formatPosition(target),
-                String.format("%.2f", distance),       // 格式化移入
-                String.format("%.1f", visionRange),      // 格式化移入
-                String.format("%.1f", fovAngle)        // 格式化移入
+                distance,       // 原始数据，由SLF4J格式化
+                visionRange,    // 原始数据，由SLF4J格式化
+                fovAngle        // 原始数据，由SLF4J格式化
         );
     }
 
@@ -62,24 +67,30 @@ public class PerceptionLogger {
 
     /**
      * 记录振动被感知事件
+     * @param listener 监听者实体（原始数据）
+     * @param gameEvent 游戏事件（原始数据）
+     * @param sourcePos 声源位置（原始数据）
+     * @param distance 原始距离值
+     * @param effectiveRange 原始有效范围值
+     * @param sourceEntity 声源实体（原始数据，可为null）
      */
-
     public static void logVibrationPerceived(LivingEntity listener, GameEvent gameEvent,
                                              Vec3 sourcePos, double distance, double effectiveRange,
-                                             @Nullable Entity sourceEntity) { // 新增参数
-        if (!shouldLogVibrationEvent()) return;
+                                             @Nullable Entity sourceEntity) {
+        if (!shouldLogVibrationEvent()) return; // 关键的性能检查点
 
+        // --- 所有昂贵的操作（包括格式化）现在被安全地包裹在检查之后 ---
         ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(gameEvent);
         String sourceName = sourceEntity != null ? getEntityName(sourceEntity) : "world";
 
-        LOGGER.info("[VIBRATION] {} at {} perceived {} from {} at {} - Distance: {}m / Range: {}m",
+        LOGGER.info("[VIBRATION] {} at {} perceived {} from {} at {} - Distance: {:.2f}m / Range: {:.2f}m",
                 getEntityName(listener),
-                formatPosition(listener), // 新增
+                formatPosition(listener),
                 eventId != null ? eventId.toString() : "unknown_event",
-                sourceName, // 新增
-                formatPosition(sourcePos), // 格式化修复
-                String.format("%.2f", distance), // 格式化修复
-                String.format("%.2f", effectiveRange) // 格式化修复
+                sourceName,
+                formatPosition(sourcePos),
+                distance,         // 原始数据，由SLF4J格式化
+                effectiveRange    // 原始数据，由SLF4J格式化
         );
     }
     /**
@@ -100,12 +111,20 @@ public class PerceptionLogger {
                 simpleReason
         );
     }
-// 新增一个重载方法，专门处理因距离和遮挡失败的日志
+    /**
+     * 记录振动被阻挡事件（距离/遮挡原因）
+     * @param listener 监听者实体（原始数据）
+     * @param gameEvent 游戏事件（原始数据）
+     * @param sourcePos 声源位置（原始数据）
+     * @param distance 原始距离值
+     * @param effectiveRange 原始有效范围值
+     * @param isOccluded 是否遮挡
+     */
     public static void logVibrationBlocked(LivingEntity listener, GameEvent gameEvent, Vec3 sourcePos,
         double distance, double effectiveRange, boolean isOccluded) {
         if (!shouldLogVibrationEvent()) return; // 关键的性能检查点
 
-        // --- 昂贵的操作现在被安全地包裹在检查之后 ---
+        // --- 所有昂贵的操作（包括格式化）现在被安全地包裹在检查之后 ---
         String reason = String.format("Too far (%.2fm > %.2fm)", distance, effectiveRange);
         if (isOccluded) {
             reason += " with 50% occlusion penalty";
@@ -137,14 +156,17 @@ public class PerceptionLogger {
 
     /**
      * 记录听力乘数变化
+     * @param entity 实体（原始数据）
+     * @param oldValue 旧值（原始数据）
+     * @param newValue 新值（原始数据）
      */
     public static void logHearingMultiplierChanged(Entity entity, double oldValue, double newValue) {
         if (!shouldLogCapability()) return;
 
         LOGGER.info("[CAPABILITY] {} hearing multiplier changed: {:.2f} -> {:.2f}",
                 getEntityName(entity),
-                oldValue,
-                newValue
+                oldValue,    // 原始数据，由SLF4J格式化
+                newValue     // 原始数据，由SLF4J格式化
         );
     }
 
@@ -176,17 +198,22 @@ public class PerceptionLogger {
 
     /**
      * 记录缓存统计
+     * @param cacheType 缓存类型名称
+     * @param hitCount 命中次数（原始数据）
+     * @param missCount 未命中次数（原始数据）
+     * @param size 缓存大小（原始数据）
      */
     public static void logCacheStats(String cacheType, long hitCount, long missCount, long size) {
-        if (!shouldLogCache()) return;
+        if (!shouldLogCache()) return; // 关键的性能检查点
 
+        // --- 所有计算现在被安全地包裹在检查之后 ---
         double hitRate = hitCount + missCount > 0
                 ? (double) hitCount / (hitCount + missCount) * 100
                 : 0;
 
         LOGGER.info("[CACHE] {} stats - Hit rate: {:.1f}% ({}/{}) | Size: {}",
                 cacheType,
-                hitRate,
+                hitRate,            // 内部计算结果，由SLF4J格式化
                 hitCount,
                 hitCount + missCount,
                 size
@@ -212,18 +239,22 @@ public class PerceptionLogger {
 
     /**
      * 记录视线检查性能
+     * @param totalChecks 总检查次数（原始数据）
+     * @param cachedChecks 缓存命中次数（原始数据）
+     * @param avgDurationNs 平均耗时纳秒（原始数据）
      */
     public static void logLineOfSightPerformance(int totalChecks, int cachedChecks, long avgDurationNs) {
-        if (!shouldLogPerformance()) return;
+        if (!shouldLogPerformance()) return; // 关键的性能检查点
 
+        // --- 所有计算现在被安全地包裹在检查之后 ---
         double cacheHitRate = totalChecks > 0
                 ? (double) cachedChecks / totalChecks * 100
                 : 0;
 
         LOGGER.info("[PERFORMANCE] LoS checks - Total: {} | Cached: {:.1f}% | Avg duration: {}μs",
                 totalChecks,
-                cacheHitRate,
-                avgDurationNs / 1000
+                cacheHitRate,         // 内部计算结果，由SLF4J格式化
+                avgDurationNs / 1000  // 内部单位转换，由SLF4J格式化
         );
     }
 

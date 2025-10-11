@@ -15,7 +15,6 @@ public class LineOfSightChecker {
      * @param target 目标
      * @return true表示视线畅通
      */
-    // 在 hasLineOfSight 方法中添加：
 
     public static boolean hasLineOfSight(LivingEntity observer, LivingEntity target) {
         PerceptionCache.LineOfSightKey cacheKey =

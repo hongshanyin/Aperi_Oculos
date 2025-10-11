@@ -53,31 +53,31 @@ public class VisionSystem {
                 if (AperiOculosAPI.canSee(mob, player)) {
                     successfulSpottings++;
 
-                    // 准备日志所需的所有原始数据
-                    double distance = mob.distanceTo(player);
-                    double fovAngle = calculateFovAngle(mob, player);
-                    double visionRange = mob.getAttributeValue(Attributes.FOLLOW_RANGE);
-
-                    // LOGGING
-
-                    PerceptionLogger.logTargetSpotted(mob, player, distance, fovAngle, visionRange);
-
+                    // 先触发事件
                     MinecraftForge.EVENT_BUS.post(new TargetSpottedEvent(mob, player));
+
+                    // 仅在日志启用时才计算昂贵的数据
+                    if (Config.ENABLE_DEBUG_LOGGING.get() && Config.LOG_VISION_EVENTS.get()) {
+                        double distance = mob.distanceTo(player);
+                        double fovAngle = calculateFovAngle(mob, player);
+                        double visionRange = mob.getAttributeValue(Attributes.FOLLOW_RANGE);
+
+                        PerceptionLogger.logTargetSpotted(mob, player, distance, fovAngle, visionRange);
+                    }
                 }
             }
         }
 
-        // 记录性能指标
-        long scanDuration = System.currentTimeMillis() - scanStartTime;
-
-        // LOGGING
-        // 调用日志方法，传递原始数据，无额外性能开销
-        PerceptionLogger.logVisionScanPerformance(
-                totalPlayers,
-                totalMobs,
-                totalChecksThisScan,
-                scanDuration
-        );
+        // 记录性能指标（仅在日志启用时）
+        if (Config.ENABLE_DEBUG_LOGGING.get() && Config.LOG_PERFORMANCE_METRICS.get()) {
+            long scanDuration = System.currentTimeMillis() - scanStartTime;
+            PerceptionLogger.logVisionScanPerformance(
+                    totalPlayers,
+                    totalMobs,
+                    totalChecksThisScan,
+                    scanDuration
+            );
+        }
     }
 
     private double calculateFovAngle(PathfinderMob observer, ServerPlayer target) {
