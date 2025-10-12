@@ -1,7 +1,8 @@
 # Aperi Oculos - 技术文档
 
 > **版本**: 1.0
-> **目标平台**: Minecraft 1.21 (NeoForge)
+> **目标平台**: Minecraft 1.20.1 (Forge)
+> **JAVA版本**：JAVA17
 > **最后更新**: 2025-10-10
 
 ---
@@ -66,7 +67,10 @@ io.github.Sorcery_Dynasties.aperioculos/
 ├── systems/                      # 核心感知系统
 │   ├── VisionSystem.java         # 视觉扫描系统
 │   ├── VibrationSystem.java      # 听觉监听系统
+│   ├── VanillaAIIntegration.java # 原版AI集成系统
 │   └── PerceptionBroadcaster.java# 事件广播器（可选）
+├── mixin/                        # Mixin拦截器
+│   └── MobMixin.java             # 拦截原版Mob.canSee()
 ├── capability/                   # Capability存储
 │   ├── IHearingCapability.java   # 听力接口
 │   ├── HearingCapability.java    # 听力实现
@@ -129,13 +133,18 @@ graph TD
    }
    ```
 
-2. **四级检查梯度**
+2. **五级检查梯度**
    ```
-   性能开销: 距离 < FoV < 光照 <<<< 视线检查
-   时间复杂度: O(1)   O(1)   O(1)      O(n) [n=路径方块数]
+   检查顺序: 隐身 → 距离 → FoV → 光照 → 视线
+   性能开销: O(1)    O(1)   O(1)   O(1)    O(n) [n=路径方块数]
    ```
 
-3. **夜视豁免**
+3. **隐身检查**
+   - 如果目标拥有隐身效果(`MobEffects.INVISIBILITY`)，则无法被看到
+   - **例外**：如果目标同时拥有发光效果(`MobEffects.GLOWING`)，则可以被看到
+   - 这实现了类似原版的隐身机制，但更加高效
+
+4. **夜视豁免**
    - 支持药水效果 (`MobEffects.NIGHT_VISION`)
    - 支持实体标签 (`#minecraft:undead`)
    - 支持直接ID (`minecraft:spider`)
@@ -224,6 +233,78 @@ enableVibrationOcclusion = false  # true=开启遮挡衰减，false=声音穿墙
 
 ---
 
+### 3.3 原版AI集成系统 (VanillaAIIntegration)
+
+**⚠️ 重要性能优化功能**
+
+为了避免与原版Minecraft的AI系统产生**重复性能负担**，Aperi Oculos提供了两种集成机制：
+
+#### 3.3.1 Mixin拦截原版canSee()
+
+**问题**：原版AI每个tick都会调用`Mob.canSee()`进行视线检查，而Aperi Oculos也有自己的视觉扫描系统，这会导致重复的光线追踪计算。
+
+**解决方案**：通过Mixin拦截原版的`Mob.canSee()`方法，使其复用Aperi Oculos的缓存结果。
+
+**实现原理**：
+```java
+@Mixin(Mob.class)
+public abstract class MobMixin {
+    @Inject(method = "canSee", at = @At("HEAD"), cancellable = true)
+    private void onCanSee(Entity target, CallbackInfoReturnable<Boolean> cir) {
+        if (Config.OVERRIDE_VANILLA_CAN_SEE.get() && target instanceof LivingEntity) {
+            // 使用Aperi Oculos的带缓存实现
+            boolean result = AperiOculosAPI.canSee((Mob)(Object)this, (LivingEntity)target);
+            cir.setReturnValue(result);
+        }
+    }
+}
+```
+
+**性能提升**：
+- 原版AI可以直接受益于Aperi Oculos的视线缓存（75-85%命中率）
+- 避免重复的光线追踪计算
+- **推荐始终启用此功能**
+
+#### 3.3.2 移除原版目标选择Goals
+
+**适用场景**：当你使用自定义AI模组（如行为树、状态机）完全接管怪物AI时。
+
+**功能**：自动移除原版的目标选择Goals（如`NearestAttackableTargetGoal`），避免与自定义AI冲突。
+
+**工作流程**：
+```mermaid
+graph TD
+    A[实体加入世界] --> B{启用移除Goals?}
+    B -->|否| E[保持原版AI]
+    B -->|是| C{实体在白名单中?}
+    C -->|是| E
+    C -->|否| D[移除目标选择Goals]
+    D --> F[自定义AI接管]
+```
+
+**配置示例**：
+```toml
+[vanillaIntegration]
+# 覆盖原版canSee（强烈推荐）
+overrideVanillaCanSee = true
+
+# 移除原版目标选择Goals（仅在使用自定义AI时启用）
+disableVanillaTargetGoals = false
+
+# 白名单：这些实体保留原版Goals
+vanillaGoalsWhitelist = [
+    "minecraft:iron_golem",  # 铁傀儡保持原版行为
+    "#minecraft:raiders"      # 所有掠夺者保持原版行为
+]
+```
+
+**⚠️ 注意事项**：
+- `overrideVanillaCanSee`应该**始终设为true**以获得最佳性能
+- `disableVanillaTargetGoals`只有在使用自定义AI模组时才启用
+- 如果只使用Aperi Oculos的事件系统，**不需要移除原版Goals**
+
+---
+
 ## 4. 公共API
 
 ### 4.1 AperiOculosAPI
@@ -234,16 +315,29 @@ enableVibrationOcclusion = false  # true=开启遮挡衰减，false=声音穿墙
 
 ```java
 /**
- * 执行完整的四级视觉检查
+ * 执行完整的五级视觉检查
+ * 检查顺序：隐身 → 距离 → FoV → 光照 → 视线
  * @return true 如果观察者能看到目标
  */
 public static boolean canSee(LivingEntity observer, LivingEntity target)
 ```
 
+**检查流程**：
+1. **隐身检查**：目标拥有隐身效果且无发光效果时返回false
+2. **距离检查**：超出FOLLOW_RANGE属性距离时返回false
+3. **视野角度检查**：超出配置的视野角度时返回false
+4. **光照等级检查**：在潜行光照范围内时返回false（夜视豁免）
+5. **视线检查**：有方块或实体遮挡时返回false（带缓存优化）
+
 **示例**:
 ```java
 if (AperiOculosAPI.canSee(zombie, player)) {
     zombie.setTarget(player); // 设置攻击目标
+}
+
+// 隐身玩家无法被发现（除非有发光效果）
+if (player.hasEffect(MobEffects.INVISIBILITY)) {
+    // AperiOculosAPI.canSee() 会返回 false
 }
 ```
 
@@ -431,6 +525,16 @@ vibrationAttractionDurationTicks = 200
 
 # 振动遮挡开关
 enableVibrationOcclusion = false
+
+[vanillaIntegration]
+# 覆盖原版Mob.canSee()方法
+overrideVanillaCanSee = true
+
+# 移除原版目标选择Goals
+disableVanillaTargetGoals = false
+
+# 白名单实体（保留原版Goals）
+vanillaGoalsWhitelist = []
 
 [performance]
 # 视觉扫描频率（游戏刻）

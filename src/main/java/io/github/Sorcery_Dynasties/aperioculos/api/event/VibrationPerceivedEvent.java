@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
  * 当实体感知到GameEvent并被吸引时触发
  *
  * AI模组应监听此事件，并让怪物前往 sourcePos 位置调查
+ * AI模组应根据gameEvent类型自行决定调查持续时间
  */
 public class VibrationPerceivedEvent extends Event {
     private final LivingEntity listener;
@@ -21,18 +22,16 @@ public class VibrationPerceivedEvent extends Event {
     private final double actualDistance;
     @Nullable
     private final Entity sourceEntity;
-    private final int attractionDurationTicks;  // 新增：吸引持续时间
 
     public VibrationPerceivedEvent(LivingEntity listener, Vec3 sourcePos, GameEvent gameEvent,
                                    double effectiveRange, double actualDistance,
-                                   @Nullable Entity sourceEntity, int attractionDurationTicks) {
+                                   @Nullable Entity sourceEntity) {
         this.listener = listener;
         this.sourcePos = sourcePos;
         this.gameEvent = gameEvent;
         this.effectiveRange = effectiveRange;
         this.actualDistance = actualDistance;
         this.sourceEntity = sourceEntity;
-        this.attractionDurationTicks = attractionDurationTicks;
     }
 
     public LivingEntity getListener() { return listener; }
@@ -48,10 +47,4 @@ public class VibrationPerceivedEvent extends Event {
 
     @Nullable
     public Entity getSourceEntity() { return sourceEntity; }
-
-    /**
-     * 获取吸引持续时间（游戏刻）
-     * AI模组应在此时间内让怪物保持对该位置的兴趣
-     */
-    public int getAttractionDurationTicks() { return attractionDurationTicks; }
 }

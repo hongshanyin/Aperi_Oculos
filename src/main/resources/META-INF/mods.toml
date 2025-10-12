@@ -2,10 +2,14 @@ modLoader="javafml"
 loaderVersion="[36,)"
 license="Aperi Oculos"
 
+[[mixins]]
+config="aperioculos.mixins.json"
+
 [[mods]]
 modId="aperioculos"
-version="1.0"
+version="${file.jarVersion}"
 displayName="Aperi Oculos"
 authors="Sorcery_Dynasties"
 description='''
+A perception framework for Minecraft that provides vision and hearing systems for mobs.
 '''

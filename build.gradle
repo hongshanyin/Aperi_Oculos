@@ -170,16 +170,28 @@ tasks.named('jar', Jar).configure {
 //     dependsOn 'reobfJar'
 // }
 
+// Create a sources jar
+java {
+    withSourcesJar()
+}
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
             artifact jar
+            artifact sourcesJar
         }
     }
     repositories {
         maven {
             url "file://${project.projectDir}/mcmodsrepo"
+        }
+        maven {
+            url "https://cursemaven.com"
+            content {
+                includeGroup "curse.maven"
+            }
         }
     }
 }

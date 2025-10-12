@@ -4,6 +4,7 @@ import io.github.Sorcery_Dynasties.aperioculos.api.AperiOculosAPI;
 import io.github.Sorcery_Dynasties.aperioculos.api.event.VibrationPerceivedEvent;
 import io.github.Sorcery_Dynasties.aperioculos.capability.HearingCapabilityProvider;
 import io.github.Sorcery_Dynasties.aperioculos.config.Config;
+import io.github.Sorcery_Dynasties.aperioculos.util.ArmorSoundHelper;
 import io.github.Sorcery_Dynasties.aperioculos.util.PerceptionLogger;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -52,6 +53,12 @@ public class VibrationSystem {
         // 使用配置的自定义吸引范围（如果设置了）
         double configuredRange = getConfiguredAttractionRange(gameEvent);
         double finalRange = configuredRange > 0 ? configuredRange : baseRadius;
+
+        // 护甲和潜行修正
+        if (sourceEntity instanceof LivingEntity living) {
+            boolean isCrouching = living.isCrouching();
+            finalRange = ArmorSoundHelper.getModifiedSoundRange(living, isCrouching, finalRange);
+        }
 
         // 扩大扫描范围（根据最大可能的听力乘数）
         double maxMultiplier = Config.MAX_HEARING_MULTIPLIER.get();
@@ -102,10 +109,9 @@ public class VibrationSystem {
             // // LOGGING
             PerceptionLogger.logVibrationPerceived(listener, gameEvent, sourcePos, distance, effectiveRange, sourceEntity);
 
-            // 广播事件，包含持续时间信息
-            int attractionDuration = Config.VIBRATION_ATTRACTION_DURATION_TICKS.get();
+            // 广播事件（AI模组将根据gameEvent类型决定调查持续时间）
             MinecraftForge.EVENT_BUS.post(new VibrationPerceivedEvent(
-                    listener, sourcePos, gameEvent, effectiveRange, distance, sourceEntity, attractionDuration
+                    listener, sourcePos, gameEvent, effectiveRange, distance, sourceEntity
             ));
         }
     }

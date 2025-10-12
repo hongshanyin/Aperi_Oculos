@@ -39,14 +39,27 @@ public class PerceptionLogger {
         if (!shouldLogVisionEvent()) return; // 关键的性能检查点
 
         // --- 所有昂贵的操作（包括格式化）现在被安全地包裹在检查之后 ---
-        LOGGER.info("[VISION] {} at {} spotted {} at {} - Distance: {:.2f}m / Range: {:.1f}m (FoV: {:.1f}°)",
+        // 检查隐身和发光状态
+        boolean isInvisible = target.hasEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY);
+        boolean isGlowing = target.hasEffect(net.minecraft.world.effect.MobEffects.GLOWING);
+        String statusTag = "";
+        if (isInvisible && isGlowing) {
+            statusTag = " [INVISIBLE+GLOWING]";
+        } else if (isInvisible) {
+            statusTag = " [INVISIBLE]";
+        } else if (isGlowing) {
+            statusTag = " [GLOWING]";
+        }
+
+        LOGGER.info("[VISION] {} at {} spotted {} at {}{} - Distance: {}m / Range: {}m (FoV: {}°)",
                 getEntityName(observer),
                 formatPosition(observer),
                 getEntityName(target),
                 formatPosition(target),
-                distance,       // 原始数据，由SLF4J格式化
-                visionRange,    // 原始数据，由SLF4J格式化
-                fovAngle        // 原始数据，由SLF4J格式化
+                statusTag,
+                String.format("%.2f", distance),
+                String.format("%.1f", visionRange),
+                String.format("%.1f", fovAngle)
         );
     }
 
@@ -83,14 +96,14 @@ public class PerceptionLogger {
         ResourceLocation eventId = BuiltInRegistries.GAME_EVENT.getKey(gameEvent);
         String sourceName = sourceEntity != null ? getEntityName(sourceEntity) : "world";
 
-        LOGGER.info("[VIBRATION] {} at {} perceived {} from {} at {} - Distance: {:.2f}m / Range: {:.2f}m",
+        LOGGER.info("[VIBRATION] {} at {} perceived {} from {} at {} - Distance: {}m / Range: {}m",
                 getEntityName(listener),
                 formatPosition(listener),
                 eventId != null ? eventId.toString() : "unknown_event",
                 sourceName,
                 formatPosition(sourcePos),
-                distance,         // 原始数据，由SLF4J格式化
-                effectiveRange    // 原始数据，由SLF4J格式化
+                String.format("%.2f", distance),
+                String.format("%.2f", effectiveRange)
         );
     }
     /**
@@ -163,10 +176,10 @@ public class PerceptionLogger {
     public static void logHearingMultiplierChanged(Entity entity, double oldValue, double newValue) {
         if (!shouldLogCapability()) return;
 
-        LOGGER.info("[CAPABILITY] {} hearing multiplier changed: {:.2f} -> {:.2f}",
+        LOGGER.info("[CAPABILITY] {} hearing multiplier changed: {} -> {}",
                 getEntityName(entity),
-                oldValue,    // 原始数据，由SLF4J格式化
-                newValue     // 原始数据，由SLF4J格式化
+                String.format("%.2f", oldValue),
+                String.format("%.2f", newValue)
         );
     }
 
@@ -211,9 +224,9 @@ public class PerceptionLogger {
                 ? (double) hitCount / (hitCount + missCount) * 100
                 : 0;
 
-        LOGGER.info("[CACHE] {} stats - Hit rate: {:.1f}% ({}/{}) | Size: {}",
+        LOGGER.info("[CACHE] {} stats - Hit rate: {}% ({}/{}) | Size: {}",
                 cacheType,
-                hitRate,            // 内部计算结果，由SLF4J格式化
+                String.format("%.1f", hitRate),
                 hitCount,
                 hitCount + missCount,
                 size
@@ -251,10 +264,10 @@ public class PerceptionLogger {
                 ? (double) cachedChecks / totalChecks * 100
                 : 0;
 
-        LOGGER.info("[PERFORMANCE] LoS checks - Total: {} | Cached: {:.1f}% | Avg duration: {}μs",
+        LOGGER.info("[PERFORMANCE] LoS checks - Total: {} | Cached: {}% | Avg duration: {}μs",
                 totalChecks,
-                cacheHitRate,         // 内部计算结果，由SLF4J格式化
-                avgDurationNs / 1000  // 内部单位转换，由SLF4J格式化
+                String.format("%.1f", cacheHitRate),
+                avgDurationNs / 1000
         );
     }
 

@@ -23,13 +23,21 @@ import java.util.Objects;
 public final class AperiOculosAPI {
 
     /**
-     * 完整的视觉检查：距离 + FoV + 光照 + 视线
+     * 完整的视觉检查：距离 + FoV + 光照 + 视线 + 隐身
      */
     public static boolean canSee(LivingEntity observer, LivingEntity target) {
         if (observer == null || target == null || !observer.isAlive() || !target.isAlive() || observer.equals(target)) {
             return false;
         }
         if (isBlind(observer)) return false;
+
+        // 隐身检查：如果目标隐身且没有发光效果，则无法被看到
+        if (target.hasEffect(MobEffects.INVISIBILITY) && !target.hasEffect(MobEffects.GLOWING)) {
+            io.github.Sorcery_Dynasties.aperioculos.util.PerceptionLogger.logVisionCheckFailed(
+                observer, target, "Target is invisible (without glowing effect)"
+            );
+            return false;
+        }
 
         // 距离检查：使用FOLLOW_RANGE属性
         double followDistance = observer.getAttributeValue(Attributes.FOLLOW_RANGE);

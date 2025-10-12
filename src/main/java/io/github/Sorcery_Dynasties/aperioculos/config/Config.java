@@ -29,12 +29,17 @@ public class Config {
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> DEAF_ENTITIES;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> MONITORED_GAME_EVENTS;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_ATTRACTION_RANGES;
-    public static final ForgeConfigSpec.IntValue VIBRATION_ATTRACTION_DURATION_TICKS;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> SILENT_ARMOR_MATERIALS;
     public static final ForgeConfigSpec.BooleanValue ENABLE_VIBRATION_OCCLUSION;
 
     // === Performance Settings ===
     public static final ForgeConfigSpec.IntValue VISION_SCAN_RATE_TICKS;
     public static final ForgeConfigSpec.IntValue LINE_OF_SIGHT_CACHE_DURATION_TICKS;
+
+    // === Vanilla AI Integration Settings (新增) ===
+    public static final ForgeConfigSpec.BooleanValue OVERRIDE_VANILLA_HAS_LINE_OF_SIGHT;
+    public static final ForgeConfigSpec.BooleanValue DISABLE_VANILLA_TARGET_GOALS;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> VANILLA_GOALS_WHITELIST;
 
     // === Logging Settings (新增) ===
     public static final ForgeConfigSpec.BooleanValue ENABLE_DEBUG_LOGGING;
@@ -156,7 +161,6 @@ public class Config {
                         List.of(
                                 "minecraft:block_close",          //方块关闭
                                 "minecraft:block_open",           //方块打开
-                                "minecraft:eat",                  //食用
                                 "minecraft:container_close",      //容器关闭
                                 "minecraft:container_open",       //容器打开
                                 "minecraft:swim",                 //游泳
@@ -186,20 +190,47 @@ public class Config {
                 )
                 .defineList("customAttractionRanges",
                         List.of(
-                                "minecraft:projectile_land = 16.0",
-                                "minecraft:hit_ground = 8.0",
-                                "minecraft:item_interact_finish = 8.0"
+                                "minecraft:step = 8.0",                  // 脚步声（原版16，这里限制为8）
+                                "minecraft:swim = 6.0",                  // 游泳声
+                                "minecraft:equip = 4.0",                 // 穿装备
+                                "minecraft:unequip = 4.0",               // 卸装备
+                                "minecraft:projectile_shoot = 3.0",      // 发射投掷物
+                                "minecraft:hit_ground = 8.0",            // 实体落地
+                                "minecraft:item_interact_finish = 8.0",  // 使用物品完成
+                                "minecraft:projectile_land = 16.0",      // 投掷物落地
+                                "minecraft:container_close = 16.0",      // 关闭容器
+                                "minecraft:container_open = 16.0",       // 打开容器
+                                "minecraft:block_place = 12.0",          // 放置方块
+                                "minecraft:block_destroy = 12.0",        // 破坏方块
+                                "minecraft:prime_fuse = 12.0",           // 点燃TNT
+                                "minecraft:explode = 32.0",              // 爆炸
+                                "minecraft:lightning_strike = 32.0"      // 闪电
                         ),
                         s -> true);
 
-// 新增：吸引持续时间
-        VIBRATION_ATTRACTION_DURATION_TICKS = BUILDER
+// 新增：静音护甲材质列表
+        SILENT_ARMOR_MATERIALS = BUILDER
                 .comment(
-                        "How long (in game ticks) a mob remains attracted to the vibration source.",
-                        "During this time, AI mods should make the mob investigate the location.",
-                        "20 ticks = 1 second, 200 ticks = 10 seconds"
+                        "Armor materials that allow silent movement when crouching.",
+                        "Sound range calculation:",
+                        "  1. No armor/Silent armor:",
+                        "     - Walking: base range (e.g., 8 blocks)",
+                        "     - Crouching: 1 block",
+                        "  2. Heavy armor (not in list or mixed):",
+                        "     - Walking: base range × 1.5 (e.g., 8 → 12 blocks)",
+                        "     - Crouching: (base range × 1.5) × 0.5 (e.g., 8 → 12 → 6 blocks)",
+                        "Supports:",
+                        "  - Material names: 'leather', 'chainmail', 'iron', 'gold', 'diamond', 'netherite'",
+                        "  - Mod materials: 'modid:material_name' (e.g., 'twilightforest:ironwood')",
+                        "  - Item IDs: Full armor item IDs like 'minecraft:leather_chestplate'"
                 )
-                .defineInRange("vibrationAttractionDurationTicks", 200, 20, 1200);
+                .defineList("silentArmorMaterials",
+                        List.of(
+                                "leather",           // 原版皮革
+                                "wool",              // 如果有羊毛护甲mod
+                                "cloth"              // 通用布料材质
+                        ),
+                        s -> true);
 
 // 新增：振动遮挡开关
         ENABLE_VIBRATION_OCCLUSION = BUILDER
@@ -208,6 +239,40 @@ public class Config {
                         "Set to false to allow sounds to 'travel through walls'."
                 )
                 .define("enableVibrationOcclusion", false);
+
+        BUILDER.pop();
+
+        // === 新增原版AI集成配置 ===
+        BUILDER.push("vanillaIntegration");
+        BUILDER.comment(
+                "Settings for integrating with vanilla Minecraft AI systems.",
+                "⚠️ These settings affect how Aperi Oculos interacts with vanilla AI."
+        );
+
+        OVERRIDE_VANILLA_HAS_LINE_OF_SIGHT = BUILDER
+                .comment(
+                        "Override vanilla LivingEntity.hasLineOfSight() method to use Aperi Oculos vision system.",
+                        "true = Use Aperi Oculos cached vision checks (recommended for performance)",
+                        "false = Keep vanilla vision checks (may cause duplicate calculations)"
+                )
+                .define("overrideVanillaHasLineOfSight", true);
+
+        DISABLE_VANILLA_TARGET_GOALS = BUILDER
+                .comment(
+                        "Automatically remove vanilla target selection AI goals from all mobs.",
+                        "true = Remove goals like NearestAttackableTargetGoal (use with custom AI mods)",
+                        "false = Keep vanilla target goals (default behavior)",
+                        "⚠️ Only enable this if you're using a custom AI mod that handles targeting"
+                )
+                .define("disableVanillaTargetGoals", false);
+
+        VANILLA_GOALS_WHITELIST = BUILDER
+                .comment(
+                        "Entity types that should keep their vanilla target goals (even if disableVanillaTargetGoals is true).",
+                        "Supports entity IDs (e.g., 'minecraft:zombie') and tags (e.g., '#minecraft:undead').",
+                        "This is useful for preserving vanilla behavior for specific mobs."
+                )
+                .defineList("vanillaGoalsWhitelist", List.of(), s -> true);
 
         BUILDER.pop();
 
